@@ -13,14 +13,8 @@ USER root
 # Spark dependencies
 # Default values can be overridden at build time
 # (ARGS are in lower case to distinguish them from ENV)
-ARG spark_version="3.0.1"
-ARG hadoop_version="3.2"
-ARG spark_checksum="E8B47C5B658E0FBC1E57EEA06262649D8418AE2B2765E44DA53AAF50094877D17297CC5F0B9B35DF2CEEF830F19AA31D7E56EAD950BBE7F8830D6874F88CFC3C"
 ARG py4j_version="0.10.9"
-ARG openjdk_version="11"
-
-ENV APACHE_SPARK_VERSION="${spark_version}" \
-    HADOOP_VERSION="${hadoop_version}"
+ARG openjdk_version="8"
 
 RUN apt-get -y update && \
     apt-get install --no-install-recommends -y \
@@ -32,14 +26,12 @@ RUN apt-get -y update && \
 WORKDIR /tmp
 # Using the preferred mirror to download Spark
 # hadolint ignore=SC2046
-RUN wget -q $(wget -qO- https://www.apache.org/dyn/closer.lua/spark/spark-${APACHE_SPARK_VERSION}/spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz\?as_json | \
-    python -c "import sys, json; content=json.load(sys.stdin); print(content['preferred']+content['path_info'])") && \
-    echo "${spark_checksum} *spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz" | sha512sum -c - && \
-    tar xzf "spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz" -C /usr/local --owner root --group root --no-same-owner && \
-    rm "spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}.tgz"
+COPY spark-3.0.1-bin-spark-java-1.8.tgz .
+RUN tar xzf "spark-3.0.1-bin-spark-java-1.8.tgz" -C /usr/local --owner root --group root --no-same-owner && \
+    rm "spark-3.0.1-bin-spark-java-1.8.tgz"
 
 WORKDIR /usr/local
-RUN ln -s "spark-${APACHE_SPARK_VERSION}-bin-hadoop${HADOOP_VERSION}" spark
+RUN ln -s "spark-3.0.1-bin-spark-java-1.8" spark
 
 # Configure Spark
 ENV SPARK_HOME=/usr/local/spark
@@ -49,9 +41,28 @@ ENV PYTHONPATH="${SPARK_HOME}/python:${SPARK_HOME}/python/lib/py4j-${py4j_versio
 
 USER $NB_UID
 
-# Install pyarrow
-RUN conda install --quiet -y 'pyarrow' && \
-    conda clean --all -f -y && \
+RUN conda install --quiet -y \
+    -c conda-forge \
+    pyarrow \
+    python-blosc \
+    cytoolz \
+    dask==2.26.0 \
+    lz4 \
+    nomkl \
+    numpy==1.18.1 \
+    pandas==1.0.1 \
+    ipywidgets \
+    dask-labextension==3.0.0 \
+    python-graphviz && \
+    jupyter labextension install @jupyter-widgets/jupyterlab-manager dask-labextension@3.0.0 \
+    && conda clean -tipsy \
+    && jupyter lab clean \
+    && jlpm cache clean \
+    && npm cache clean --force \
+    && find /opt/conda/ -type f,l -name '*.a' -delete \
+    && find /opt/conda/ -type f,l -name '*.pyc' -delete \
+    && find /opt/conda/ -type f,l -name '*.js.map' -delete \
+    && find /opt/conda/lib/python*/site-packages/bokeh/server/static -type f,l -name '*.js' -not -name '*.min.js' -delete && \
     fix-permissions "${CONDA_DIR}" && \
     fix-permissions "/home/${NB_USER}"
 
